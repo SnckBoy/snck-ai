@@ -108,6 +108,9 @@ SNCK_PORT=8080 SNCK_APP_URL=https://chat.example.com \
 After it finishes, visit the printed URL and register the first account — that
 user is the Owner. Re-running the same command updates Snck AI in place.
 
+GitHub Actions CI validates the installer scripts, Compose file, TypeScript
+build, and Docker image on every push to `main` (see `.github/workflows/ci.yml`).
+
 ## Scripts
 
 | Script | Purpose |
