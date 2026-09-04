@@ -1,15 +1,17 @@
+name: snck-ai
+
 services:
   db:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: snck
-      POSTGRES_PASSWORD: snck_dev_password
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-snck_dev_password}
       POSTGRES_DB: snckai
     volumes:
       - snck_pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U snck -d snckai"]
       interval: 5s
@@ -23,13 +25,13 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://snck:snck_dev_password@db:5432/snckai?schema=public
+      DATABASE_URL: postgresql://snck:${DB_PASSWORD:-snck_dev_password}@db:5432/snckai?schema=public
       AUTH_SECRET: ${AUTH_SECRET:-replace-me-with-a-long-random-secret}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-replace-me-with-a-32-byte-hex-key}
       APP_URL: ${APP_URL:-http://localhost:3000}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-60}
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:3000"
 
 volumes:
   snck_pgdata:

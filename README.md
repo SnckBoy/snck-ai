@@ -77,6 +77,37 @@ docker compose up --build
 
 App: `http://localhost:3000` · Postgres: `localhost:5432`
 
+## One-command Ubuntu VPS install
+
+Run this on a fresh Ubuntu VPS (root or sudo). It installs Docker + Compose,
+clones the repo to `/opt/snck-ai`, generates random secrets, and starts the
+full stack (Postgres + app).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SnckBoy/snck-ai/main/install.sh | sudo bash
+```
+
+Optional overrides (prefix to the command):
+
+| Variable | Default |
+| --- | --- |
+| `SNCK_DIR` | `/opt/snck-ai` |
+| `SNCK_PORT` | `3000` |
+| `SNCK_APP_URL` | `http://<public-ip>:<port>` |
+| `SNCK_DB_PASSWORD` | random |
+| `SNCK_AUTH_SECRET` | random |
+| `SNCK_ENCRYPTION_KEY` | random |
+
+Example with a custom port and URL:
+
+```bash
+SNCK_PORT=8080 SNCK_APP_URL=https://chat.example.com \
+  curl -fsSL https://raw.githubusercontent.com/SnckBoy/snck-ai/main/install.sh | sudo bash
+```
+
+After it finishes, visit the printed URL and register the first account — that
+user is the Owner. Re-running the same command updates Snck AI in place.
+
 ## Scripts
 
 | Script | Purpose |
