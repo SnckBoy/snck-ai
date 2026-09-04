@@ -1,0 +1,180 @@
+// =============================================================================
+// Snck AI - Prisma Schema
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum Role {
+  OWNER
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum ProviderType {
+  OPENAI_COMPATIBLE
+  ANTHROPIC
+  GEMINI
+  OPENROUTER
+  CUSTOM
+}
+
+enum ProviderStatus {
+  UNTESTED
+  CONNECTED
+  INVALID_KEY
+  PROVIDER_ERROR
+  NETWORK_ERROR
+  DISABLED
+}
+
+// -----------------------------------------------------------------------------
+// Users
+// -----------------------------------------------------------------------------
+
+model User {
+  id             String   @id @default(cuid())
+  username       String   @unique
+  email          String   @unique
+  passwordHash   String
+  role           Role     @default(USER)
+  status         UserStatus @default(ACTIVE)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Token limits (null = unlimited, unless unlimited is true)
+  dailyTokenLimit   BigInt?
+  monthlyTokenLimit BigInt?
+  totalTokenLimit   BigInt?
+  unlimited         Boolean @default(false)
+
+  // Usage counters (reset when the relevant window rolls over)
+  dailyTokensUsed   BigInt   @default(0)
+  monthlyTokensUsed BigInt   @default(0)
+  totalTokensUsed   BigInt   @default(0)
+  dailyWindowStart  DateTime @default(now())
+  monthlyWindowStart DateTime @default(now())
+
+  conversations Conversation[]
+  usageRecords  UsageRecord[]
+
+  @@index([role])
+  @@index([email])
+}
+
+// -----------------------------------------------------------------------------
+// Conversations & Messages
+// -----------------------------------------------------------------------------
+
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String    @default("New Chat")
+  modelId   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  messages Message[]
+
+  @@index([userId, updatedAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String // "user" | "assistant" | "system"
+  content        String
+  modelId        String?
+  inputTokens    BigInt?
+  outputTokens   BigInt?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// Usage tracking
+// -----------------------------------------------------------------------------
+
+model UsageRecord {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerId   String?
+  provider     AIProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  modelId      String?
+  model        Model?   @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  inputTokens  BigInt   @default(0)
+  outputTokens BigInt   @default(0)
+  totalTokens  BigInt   @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([modelId, createdAt])
+  @@index([providerId, createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// AI providers & models
+// -----------------------------------------------------------------------------
+
+model AIProvider {
+  id            String         @id @default(cuid())
+  name          String
+  type          ProviderType
+  baseUrl       String?
+  apiKeyEnc     String?
+  enabled       Boolean        @default(false)
+  status        ProviderStatus @default(UNTESTED)
+  statusMessage String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  models Model[]
+  usageRecords UsageRecord[]
+
+  @@index([enabled])
+}
+
+model Model {
+  id             String   @id @default(cuid())
+  providerId     String
+  provider       AIProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  identifier     String // provider-side model id, e.g. "gpt-4o"
+  displayName    String
+  enabled        Boolean  @default(false)
+  standardAccess Boolean  @default(false) // visible to Standard (non-owner) users
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([providerId, identifier])
+  @@index([enabled, standardAccess])
+
+  usageRecords UsageRecord[]
+}
+
+// -----------------------------------------------------------------------------
+// Platform settings (key-value)
+// -----------------------------------------------------------------------------
+
+model PlatformSetting {
+  key   String @id
+  value String
+}
