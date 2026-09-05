@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-alpine AS deps
+FROM node:20-slim AS deps
 WORKDIR /app
 ENV DATABASE_URL="postgresql://snck:snck@db:5432/snckai?schema=public"
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 RUN npm ci
 
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 WORKDIR /app
 ENV DATABASE_URL="postgresql://snck:snck@db:5432/snckai?schema=public"
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -15,7 +15,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate && npm run build
 
-FROM node:20-alpine AS runner
+FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
