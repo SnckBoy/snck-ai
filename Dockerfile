@@ -3,6 +3,9 @@
 FROM node:20-slim AS deps
 WORKDIR /app
 ENV DATABASE_URL="postgresql://snck:snck@db:5432/snckai?schema=public"
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 RUN npm ci
@@ -11,6 +14,9 @@ FROM node:20-slim AS builder
 WORKDIR /app
 ENV DATABASE_URL="postgresql://snck:snck@db:5432/snckai?schema=public"
 ENV NEXT_TELEMETRY_DISABLED=1
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate && npm run build
@@ -19,7 +25,11 @@ FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && addgroup --system --gid 1001 nodejs \
+    && adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
