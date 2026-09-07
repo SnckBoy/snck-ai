@@ -26,9 +26,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { email, password } = parsed.data;
+  const email = parsed.data.email.trim().toLowerCase();
+  const { password } = parsed.data;
 
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+  let user;
+  try {
+    user = await prisma.user.findUnique({ where: { email } });
+  } catch (err) {
+    console.error('[auth/login]', err);
+    return NextResponse.json({ error: 'Login failed. Please try again.' }, { status: 500 });
+  }
   if (!user) {
     return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
   }
@@ -42,12 +49,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
   }
 
-  await createSession({
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    role: user.role,
-  });
+  try {
+    await createSession({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+    });
+  } catch (err) {
+    console.error('[auth/login] createSession', err);
+    return NextResponse.json({ error: 'Login failed. Please try again.' }, { status: 500 });
+  }
 
   return NextResponse.json({
     user: { id: user.id, username: user.username, email: user.email, role: user.role },
