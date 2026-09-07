@@ -5,6 +5,7 @@ import { registerSchema } from '@/lib/validation';
 import { createSession } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { applyDefaultLimitsToUser } from '@/lib/usage';
+import { seedDemoProvider } from '@/lib/demo-provider';
 import { Prisma } from '@prisma/client';
 
 export const runtime = 'nodejs';
@@ -69,6 +70,13 @@ export async function POST(req: NextRequest) {
     // registration (the user is already created).
     if (!created.isFirstUser) {
       await applyDefaultLimitsToUser(created.id).catch(() => undefined);
+    }
+
+    // Non-fatal: seed the demo provider only for the very first (Owner) account.
+    if (created.isFirstUser) {
+      await seedDemoProvider().catch((err) => {
+        console.error('[auth/register] seedDemoProvider', err);
+      });
     }
 
     await createSession({

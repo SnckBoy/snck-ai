@@ -110,7 +110,10 @@ SNCK_PORT=8080 SNCK_APP_URL=https://chat.example.com \
 ```
 
 After it finishes, visit the printed URL and register the first account — that
-user is the Owner. Re-running the same command updates Snck AI in place.
+user is the Owner. A **demo mock provider with three models** is seeded
+automatically when the Owner registers, so you can start chatting immediately
+with no API keys. Set `SEED_DEMO_PROVIDER=false` to disable seeding. Re-running
+the same command updates Snck AI in place.
 
 GitHub Actions CI validates the installer scripts, Compose file, TypeScript
 build, and Docker image on every push to `main` (see `.github/workflows/ci.yml`).

@@ -84,11 +84,17 @@ jobs:
 
       - name: Register first user (must become Owner)
         run: |
-          body=$(curl -fsS -H 'Content-Type: application/json' \
+          body=$(curl -fsS -c /tmp/owner.jar -H 'Content-Type: application/json' \
             -d '{"username":"owner","email":"owner@ci.local","password":"OwnerPass123!"}' \
             http://localhost:3000/api/auth/register)
           echo "$body"
           printf '%s' "$body" | grep -q '"role":"OWNER"' || { echo "expected OWNER role"; exit 1; }
+
+      - name: Seeded demo model is chat-ready for the Owner
+        run: |
+          models=$(curl -fsS -b /tmp/owner.jar http://localhost:3000/api/models)
+          echo "$models"
+          printf '%s' "$models" | grep -q 'snck-mock-gpt' || { echo "expected seeded demo model"; exit 1; }
 
       - name: Register second user (must be Standard User)
         run: |

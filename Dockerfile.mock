@@ -1,0 +1,10 @@
+# Demo mock AI provider used by docker-compose so a fresh install has a
+# working chat model immediately. It never leaves the compose network.
+FROM node:20-alpine
+WORKDIR /app
+COPY scripts/mock-provider.js ./mock-provider.js
+ENV NODE_ENV=production
+ENV MOCK_PORT=4500
+EXPOSE 4500
+USER node
+CMD ["node", "mock-provider.js"]
