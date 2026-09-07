@@ -70,12 +70,16 @@ Add a Custom provider with base URL `http://localhost:4500` and any API key.
 
 ## Docker
 
+Compose reads `AUTH_SECRET`, `ENCRYPTION_KEY`, `DB_PASSWORD`, `PORT`,
+`APP_URL`, and `RATE_LIMIT_MAX` from your environment or a `.env` file next to
+`docker-compose.yml`.
+
 ```bash
 # Set AUTH_SECRET and ENCRYPTION_KEY in the environment or a .env file
 docker compose up --build
 ```
 
-App: `http://localhost:3000` · Postgres: `localhost:5432`
+App: `http://localhost:3000` · Postgres: bound to `127.0.0.1:5432` (host only, not exposed publicly)
 
 ## One-command Ubuntu VPS install
 
