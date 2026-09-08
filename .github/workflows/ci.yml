@@ -99,8 +99,18 @@ jobs:
           curl -sN -b /tmp/owner.jar -H 'Content-Type: application/json' \
             -d "{\"modelId\":\"$model_id\",\"content\":\"Hello from Owner\"}" \
             http://localhost:3000/api/chat > /tmp/owner_chat.txt
-          grep -q '"type":"done"' /tmp/owner_chat.txt || { echo "Owner stream did not finish"; exit 1; }
-          grep -q '"type":"error"' /tmp/owner_chat.txt && { echo "Owner stream errored"; exit 1; }
+          if grep -q '"type":"done"' /tmp/owner_chat.txt; then
+            echo "owner stream finished OK"
+          else
+            echo "owner stream did not finish"
+            tail -5 /tmp/owner_chat.txt
+            exit 1
+          fi
+          if grep -q '"type":"error"' /tmp/owner_chat.txt; then
+            echo "owner stream errored"
+            tail -5 /tmp/owner_chat.txt
+            exit 1
+          fi
 
       - name: Register second user (must be Standard User)
         run: |
@@ -119,8 +129,18 @@ jobs:
           curl -sN -b /tmp/user.jar -H 'Content-Type: application/json' \
             -d "{\"modelId\":\"$model_id\",\"content\":\"Hello from a standard user\"}" \
             http://localhost:3000/api/chat > /tmp/user_chat.txt
-          grep -q '"type":"done"' /tmp/user_chat.txt || { echo "standard-user stream did not finish"; exit 1; }
-          grep -q '"type":"error"' /tmp/user_chat.txt && { echo "standard-user stream errored"; exit 1; }
+          if grep -q '"type":"done"' /tmp/user_chat.txt; then
+            echo "standard-user stream finished OK"
+          else
+            echo "standard-user stream did not finish"
+            tail -5 /tmp/user_chat.txt
+            exit 1
+          fi
+          if grep -q '"type":"error"' /tmp/user_chat.txt; then
+            echo "standard-user stream errored"
+            tail -5 /tmp/user_chat.txt
+            exit 1
+          fi
 
       - name: Stop the stack
         if: always()
