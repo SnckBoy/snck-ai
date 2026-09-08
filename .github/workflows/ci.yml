@@ -95,14 +95,32 @@ jobs:
           models=$(curl -fsS -b /tmp/owner.jar http://localhost:3000/api/models)
           echo "$models"
           printf '%s' "$models" | grep -q 'snck-mock-gpt' || { echo "expected seeded demo model"; exit 1; }
+          model_id=$(printf '%s' "$models" | python3 -c "import sys,json;print(json.load(sys.stdin)['models'][0]['id'])")
+          curl -sN -b /tmp/owner.jar -H 'Content-Type: application/json' \
+            -d "{\"modelId\":\"$model_id\",\"content\":\"Hello from Owner\"}" \
+            http://localhost:3000/api/chat > /tmp/owner_chat.txt
+          grep -q '"type":"done"' /tmp/owner_chat.txt || { echo "Owner stream did not finish"; exit 1; }
+          grep -q '"type":"error"' /tmp/owner_chat.txt && { echo "Owner stream errored"; exit 1; }
 
       - name: Register second user (must be Standard User)
         run: |
-          body=$(curl -fsS -H 'Content-Type: application/json' \
+          body=$(curl -fsS -c /tmp/user.jar -H 'Content-Type: application/json' \
             -d '{"username":"user1","email":"user1@ci.local","password":"UserPass123!"}' \
             http://localhost:3000/api/auth/register)
           echo "$body"
           printf '%s' "$body" | grep -q '"role":"USER"' || { echo "expected USER role"; exit 1; }
+
+      - name: Standard user can also see and use the demo model
+        run: |
+          models=$(curl -fsS -b /tmp/user.jar http://localhost:3000/api/models)
+          echo "$models"
+          printf '%s' "$models" | grep -q 'snck-mock-gpt' || { echo "expected demo model for standard user"; exit 1; }
+          model_id=$(printf '%s' "$models" | python3 -c "import sys,json;print(json.load(sys.stdin)['models'][0]['id'])")
+          curl -sN -b /tmp/user.jar -H 'Content-Type: application/json' \
+            -d "{\"modelId\":\"$model_id\",\"content\":\"Hello from a standard user\"}" \
+            http://localhost:3000/api/chat > /tmp/user_chat.txt
+          grep -q '"type":"done"' /tmp/user_chat.txt || { echo "standard-user stream did not finish"; exit 1; }
+          grep -q '"type":"error"' /tmp/user_chat.txt && { echo "standard-user stream errored"; exit 1; }
 
       - name: Stop the stack
         if: always()
