@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, ChevronDown, Cpu, Search } from 'lucide-react';
 import { useChatStore } from '@/store/chat-store';
@@ -9,27 +9,36 @@ import type { ModelOption } from '@/types';
 import { cn } from '@/components/ui';
 
 export default function ModelSelector({ compact = false }: { compact?: boolean }) {
-  const { selectedModelId, setSelectedModelId, availableModels, setAvailableModels, modelsLoaded } =
-    useChatStore();
+  const { selectedModelId, setSelectedModelId, availableModels, setAvailableModels } = useChatStore();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(!modelsLoaded);
+  const [loading, setLoading] = useState(availableModels.length === 0);
   const ref = useRef<HTMLDivElement>(null);
 
+  const loadModels = useCallback(() => {
+    api<{ models: ModelOption[] }>('/api/models')
+      .then((res) => {
+        setAvailableModels(res.models);
+        const stored = localStorage.getItem('snck-model');
+        const valid = res.models.find((m) => m.id === stored);
+        setSelectedModelId(valid?.id ?? res.models[0]?.id ?? null);
+      })
+      .catch(() => setSelectedModelId(null))
+      .finally(() => setLoading(false));
+  }, [setAvailableModels, setSelectedModelId]);
+
   useEffect(() => {
-    if (!modelsLoaded) {
-      api<{ models: ModelOption[] }>('/api/models')
-        .then((res) => {
-          setAvailableModels(res.models);
-          const stored = localStorage.getItem('snck-model');
-          const valid = res.models.find((m) => m.id === stored);
-          setSelectedModelId(valid?.id ?? res.models[0]?.id ?? null);
-        })
-        .catch(() => setSelectedModelId(null))
-        .finally(() => setLoading(false));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    loadModels();
+    const onFocus = () => {
+      if (document.visibilityState === 'visible') loadModels();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [loadModels]);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {

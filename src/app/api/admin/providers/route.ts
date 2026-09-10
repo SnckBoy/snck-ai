@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
       type,
       baseUrl: baseUrl || getAdapter(type).defaultBaseUrl,
       apiKeyEnc: encryptSecret(apiKey),
+      enabled: true,
       status: 'UNTESTED',
     },
   });
@@ -102,6 +103,7 @@ export async function POST(req: NextRequest) {
       providerId: provider.id,
       identifier: m.identifier,
       displayName: m.displayName,
+      enabled: true,
       sortOrder: i,
     })),
   });

@@ -90,6 +90,17 @@ jobs:
           echo "$body"
           printf '%s' "$body" | grep -q '"role":"OWNER"' || { echo "expected OWNER role"; exit 1; }
 
+      - name: Newly added provider models are chat-visible immediately (no manual enable)
+        run: |
+          curl -fsS -b /tmp/owner.jar -H 'Content-Type: application/json' \
+            -d '{"name":"CI Provider","type":"OPENAI_COMPATIBLE","baseUrl":"http://mock:4500","apiKey":"ci-test-key"}' \
+            http://localhost:3000/api/admin/providers
+          models=$(curl -fsS -b /tmp/owner.jar http://localhost:3000/api/models)
+          echo "$models"
+          printf '%s' "$models" | grep -q 'gpt-4o-mini' || { echo "expected default model to be visible without manual enable"; exit 1; }
+          provider_visible=$(printf '%s' "$models" | grep -c 'CI Provider' || true)
+          [ "$provider_visible" -ge 1 ] || { echo "expected CI Provider name in model list"; exit 1; }
+
       - name: Seeded demo model is chat-ready for the Owner
         run: |
           models=$(curl -fsS -b /tmp/owner.jar http://localhost:3000/api/models)

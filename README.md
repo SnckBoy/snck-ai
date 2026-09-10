@@ -85,10 +85,25 @@ App: `http://localhost:3000` · Postgres: bound to `127.0.0.1:5432` (host only, 
 
 Run this on a fresh Ubuntu VPS (root or sudo). It installs Docker + Compose,
 clones the repo to `/opt/snck-ai`, generates random secrets, and starts the
-full stack (Postgres + app).
+full stack (Postgres + app). When run interactively it shows a menu:
+
+```
+[snck] What do you want to do?
+  1) Install the Snck AI panel (fresh install or reinstall)
+  2) Update Snck AI from GitHub (keeps your data and secrets)
+
+Enter 1 or 2:
+```
+
+When piped (no terminal) it installs by default. Both modes can also be forced
+explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SnckBoy/snck-ai/main/install.sh | sudo bash
+# 1) Install the Snck AI panel (fresh install or reinstall)
+curl -fsSL https://raw.githubusercontent.com/SnckBoy/snck-ai/main/install.sh | sudo bash -s panel
+
+# 2) Update Snck AI from the GitHub repo (git pull + rebuild, keeps DB/secrets)
+curl -fsSL https://raw.githubusercontent.com/SnckBoy/snck-ai/main/install.sh | sudo bash -s update
 ```
 
 Optional overrides (prefix to the command):
@@ -112,8 +127,11 @@ SNCK_PORT=8080 SNCK_APP_URL=https://chat.example.com \
 After it finishes, visit the printed URL and register the first account — that
 user is the Owner. A **demo mock provider with three models** is seeded
 automatically when the Owner registers, so you can start chatting immediately
-with no API keys. Set `SEED_DEMO_PROVIDER=false` to disable seeding. Re-running
-the same command updates Snck AI in place.
+with no API keys. Set `SEED_DEMO_PROVIDER=false` to disable seeding.
+
+Added providers and models are **enabled by default**, so new models appear in
+chat right away (no need to flip toggles first). The admin UI still lets you
+disable a provider/model or limit a model to the Owner only.
 
 GitHub Actions CI validates the installer scripts, Compose file, TypeScript
 build, and Docker image on every push to `main` (see `.github/workflows/ci.yml`).

@@ -134,6 +134,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             providerId: provider.id,
             identifier: m.identifier,
             displayName: m.displayName,
+            enabled: true,
           })),
         });
       }
@@ -154,6 +155,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           providerId: provider.id,
           identifier: body.identifier.trim(),
           displayName: body.displayName?.trim() || body.identifier.trim(),
+          enabled: true,
         },
       });
       return NextResponse.json({ ok: true, model }, { status: 201 });

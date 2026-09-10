@@ -8,7 +8,6 @@ interface ChatState {
   conversationsLoaded: boolean;
   selectedModelId: string | null;
   availableModels: ModelOption[];
-  modelsLoaded: boolean;
   setConversations: (c: ConversationSummary[]) => void;
   addOrUpdateConversation: (c: ConversationSummary) => void;
   removeConversation: (id: string) => void;
@@ -21,7 +20,6 @@ export const useChatStore = create<ChatState>((set) => ({
   conversationsLoaded: false,
   selectedModelId: null,
   availableModels: [],
-  modelsLoaded: false,
 
   setConversations: (conversations) =>
     set({ conversations, conversationsLoaded: true }),
@@ -46,5 +44,5 @@ export const useChatStore = create<ChatState>((set) => ({
   },
 
   setAvailableModels: (models) =>
-    set({ availableModels: models, modelsLoaded: true }),
+    set({ availableModels: models }),
 }));
