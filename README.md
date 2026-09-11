@@ -106,6 +106,12 @@ curl -fsSL https://raw.githubusercontent.com/SnckBoy/snck-ai/main/install.sh | s
 curl -fsSL https://raw.githubusercontent.com/SnckBoy/snck-ai/main/install.sh | sudo bash -s update
 ```
 
+The update mode also performs a one-time fix for installs created before
+providers/models were auto-enabled: any providers or models that were left
+disabled are enabled so they appear in chat. This runs once per install (a
+`.snck-backfill-done` marker is written); disable it manually anytime in the
+admin UI afterwards.
+
 Optional overrides (prefix to the command):
 
 | Variable | Default |

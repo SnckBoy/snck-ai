@@ -78,6 +78,24 @@ wait_ready() {
   die "Snck AI did not become ready. Check logs with:  cd $dir && docker compose logs -f app"
 }
 
+# --- One-time backfill: enable providers/models created before the fix -------
+# Older versions created providers and models disabled, so they never appeared
+# in chat. Run this once per install (marker file) to make them usable.
+backfill_enabled() {
+  local dir="$1"
+  if [ -f "$dir/.snck-backfill-done" ]; then
+    return
+  fi
+  log "Enabling previously added providers/models (one-time fix)"
+  if ( cd "$dir" && docker compose exec -T db psql -U snck -d snckai -c \
+      'UPDATE "AIProvider" SET enabled = true WHERE enabled = false; UPDATE "Model" SET enabled = true WHERE enabled = false;' ) >/dev/null 2>&1; then
+    touch "$dir/.snck-backfill-done"
+    log "Existing providers/models are now enabled and available in chat"
+  else
+    log "Backfill skipped; you can enable providers/models anytime in the admin UI"
+  fi
+}
+
 # --- Get the repository up to date -----------------------------------------
 sync_repo() {
   local dir="$1"
@@ -183,6 +201,7 @@ install_panel() {
   log "Building and starting containers (first build can take several minutes)"
   docker compose up -d --build
   wait_ready "$dir" "$PORT"
+  backfill_enabled "$dir"
   open_firewall
   print_done "$APP_URL" "$dir"
 }
@@ -210,6 +229,7 @@ update_ai() {
   log "Rebuilding and restarting containers"
   docker compose up -d --build
   wait_ready "$dir" "$PORT"
+  backfill_enabled "$dir"
   log "Snck AI has been updated and is running at: $APP_URL"
 }
 

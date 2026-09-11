@@ -114,6 +114,9 @@
 *.pem
 *.key
 
+# Installer state
+.snck-backfill-done
+
 # Temporary files
 *.tmp
 *.temp
