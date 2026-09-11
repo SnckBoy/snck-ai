@@ -150,6 +150,7 @@ build, and Docker image on every push to `main` (see `.github/workflows/ci.yml`)
 | `npm run build` | Prisma generate + production build |
 | `npm start` | Production server |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm run verify:compat` | Checks streaming against a strict third-party OpenAI-compatible endpoint |
 | `npm run db:migrate` | Prisma migrate (dev) |
 | `npm run db:migrate:deploy` | Prisma migrate (deploy) |
 | `npm run mock:provider` | Local OpenAI-compatible mock on `:4500` |

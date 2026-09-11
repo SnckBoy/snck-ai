@@ -27,7 +27,20 @@ export const anthropicAdapter: ProviderAdapter = {
   async *chatStream(config, params) {
     const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
     const system = params.messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n');
-    const messages: ChatMessage[] = params.messages.filter((m) => m.role !== 'system');
+
+    // Anthropic requires strictly alternating user/assistant turns, so merge
+    // consecutive messages with the same role and never start with assistant.
+    const messages: ChatMessage[] = [];
+    for (const m of params.messages) {
+      if (m.role === 'system') continue;
+      const last = messages[messages.length - 1];
+      if (last && last.role === m.role) {
+        last.content += `\n\n${m.content}`;
+      } else {
+        messages.push({ role: m.role, content: m.content });
+      }
+    }
+    while (messages[0]?.role === 'assistant') messages.shift();
 
     const body: Record<string, unknown> = {
       model: params.model,

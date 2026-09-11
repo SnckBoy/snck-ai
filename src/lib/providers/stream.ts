@@ -27,7 +27,8 @@ export async function* sseJsonIterator(
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      // Normalize CRLF so both `\n\n` and `\r\n\r\n` delimiters are handled.
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
 
       let boundary = buffer.indexOf('\n\n');
       while (boundary !== -1) {

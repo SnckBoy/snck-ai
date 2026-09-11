@@ -26,39 +26,71 @@ export const openaiCompatibleAdapter: ProviderAdapter = {
     const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
     const endpoint = `${baseUrl}/chat/completions`;
 
-    const body: Record<string, unknown> = {
+    const baseBody: Record<string, unknown> = {
       model: params.model,
       messages: params.messages.map((m) => ({ role: m.role, content: m.content })),
       stream: true,
+    };
+    if (params.temperature !== undefined) baseBody.temperature = params.temperature;
+    if (params.maxTokens !== undefined) baseBody.max_tokens = params.maxTokens;
+
+    // Many third-party / self-hosted OpenAI-compatible servers reject optional
+    // parameters such as `stream_options` and `max_tokens` (newer reasoning
+    // models require `max_completion_tokens`). Try the richest body first and
+    // fall back to increasingly compatible variants on HTTP 400/422.
+    const renameMaxTokens = (body: Record<string, unknown>): Record<string, unknown> => {
+      if (body.max_tokens === undefined) return body;
+      const { max_tokens, ...rest } = body;
+      return { ...rest, max_completion_tokens: max_tokens };
+    };
+    const withUsage: Record<string, unknown> = {
+      ...baseBody,
       stream_options: { include_usage: true },
     };
-    if (params.temperature !== undefined) body.temperature = params.temperature;
-    if (params.maxTokens !== undefined) body.max_tokens = params.maxTokens;
+    const variants: Array<Record<string, unknown>> = [withUsage];
+    if (params.maxTokens !== undefined) variants.push(renameMaxTokens(withUsage));
+    variants.push({ ...baseBody });
+    if (params.maxTokens !== undefined) variants.push(renameMaxTokens(baseBody));
 
-    let res: Response;
-    try {
-      res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        signal: params.signal,
-      });
-    } catch (err) {
-      if (params.signal?.aborted) throw new ProviderError('NETWORK_ERROR', 'Request aborted');
-      throw new ProviderError('NETWORK_ERROR', (err as Error).message || 'Network error');
+    let res: Response | undefined;
+    let lastError: ProviderError | undefined;
+    for (const body of variants) {
+      try {
+        res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${config.apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal: params.signal,
+        });
+      } catch (err) {
+        if (params.signal?.aborted) throw new ProviderError('NETWORK_ERROR', 'Request aborted');
+        throw new ProviderError('NETWORK_ERROR', (err as Error).message || 'Network error');
+      }
+
+      if (res.ok && res.body) break;
+
+      const detail = await parseErrorResponse(res).catch(() => '');
+      lastError = mapHttpError(res.status, detail);
+      // Only retry when the failure looks like an unsupported-parameter error.
+      if (res.status !== 400 && res.status !== 422) throw lastError;
+      res = undefined;
     }
 
-    if (!res.ok || !res.body) {
-      const detail = await parseErrorResponse(res).catch(() => '');
-      throw mapHttpError(res.status, detail);
+    if (!res || !res.ok || !res.body) {
+      throw lastError ?? new ProviderError('PROVIDER_ERROR', 'Provider request failed');
     }
 
     // Some OpenAI-compatible endpoints return non-streaming JSON.
     if (!res.headers.get('content-type')?.includes('text/event-stream')) {
       const json = (await res.json()) as any;
+      if (json?.error) {
+        const detail =
+          typeof json.error === 'string' ? json.error : json.error?.message ?? 'Provider error';
+        throw new ProviderError('PROVIDER_ERROR', String(detail));
+      }
       const content = json?.choices?.[0]?.message?.content ?? '';
       const usage = json?.usage;
       yield {

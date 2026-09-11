@@ -33,6 +33,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Provider compatibility check (strict third-party endpoint)
+        run: npm run verify:compat
+
       - name: Production build
         run: npm run build
 
