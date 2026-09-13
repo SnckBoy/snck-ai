@@ -100,9 +100,16 @@ jobs:
             http://localhost:3000/api/admin/providers
           models=$(curl -fsS -b /tmp/owner.jar http://localhost:3000/api/models)
           echo "$models"
-          printf '%s' "$models" | grep -q 'gpt-4o-mini' || { echo "expected default model to be visible without manual enable"; exit 1; }
-          provider_visible=$(printf '%s' "$models" | grep -c 'CI Provider' || true)
-          [ "$provider_visible" -ge 1 ] || { echo "expected CI Provider name in model list"; exit 1; }
+          MODELS="$models" python3 - <<'PY'
+          import json, os
+          models = json.loads(os.environ["MODELS"])["models"]
+          ci = [m for m in models if m["providerName"] == "CI Provider"]
+          if not ci:
+              raise SystemExit("expected CI Provider models to be visible without manual enable")
+          if not any(m["identifier"] == "snck-mock-gpt" for m in ci):
+              raise SystemExit("expected auto-discovered model identifiers for CI Provider")
+          print("CI Provider models:", [m["identifier"] for m in ci])
+          PY
 
       - name: Seeded demo model is chat-ready for the Owner
         run: |

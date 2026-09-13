@@ -97,9 +97,30 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  const defaults = getDefaultModels(type);
+  // Best effort: discover the provider's real models so third-party endpoints
+  // work immediately with correct model identifiers. Fall back to the static
+  // defaults (e.g. OpenAI model names) if discovery is not possible.
+  const adapter = getAdapter(type);
+  let discovered = false;
+  let models = getDefaultModels(type);
+  try {
+    const fetched = await adapter.fetchModels({ baseUrl: provider.baseUrl ?? undefined, apiKey });
+    if (fetched.length > 0) {
+      const unique = new Map<string, { identifier: string; displayName: string }>();
+      for (const m of fetched) {
+        if (m.identifier && !unique.has(m.identifier)) unique.set(m.identifier, m);
+      }
+      if (unique.size > 0) {
+        models = [...unique.values()];
+        discovered = true;
+      }
+    }
+  } catch {
+    // Keep the defaults; the owner can still fetch/test models from the UI.
+  }
+
   await prisma.model.createMany({
-    data: defaults.map((m, i) => ({
+    data: models.map((m, i) => ({
       providerId: provider.id,
       identifier: m.identifier,
       displayName: m.displayName,
@@ -107,6 +128,13 @@ export async function POST(req: NextRequest) {
       sortOrder: i,
     })),
   });
+
+  if (discovered) {
+    await prisma.aIProvider.update({
+      where: { id: provider.id },
+      data: { status: 'CONNECTED', statusMessage: `Discovered ${models.length} models` },
+    });
+  }
 
   return NextResponse.json({ provider: { id: provider.id } }, { status: 201 });
 }
