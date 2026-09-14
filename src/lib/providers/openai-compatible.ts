@@ -7,7 +7,7 @@ import type {
   TestResult,
 } from './types';
 import { ProviderError } from './types';
-import { estimateTokens, mapHttpError, parseErrorResponse, sseJsonIterator } from './stream';
+import { estimateTokens, mapHttpError, normalizeBaseUrl, parseErrorResponse, sseJsonIterator } from './stream';
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
@@ -23,7 +23,7 @@ export const openaiCompatibleAdapter: ProviderAdapter = {
     { identifier: 'gpt-3.5-turbo', displayName: 'GPT-3.5 Turbo' },
   ],
   async *chatStream(config, params) {
-    const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const baseUrl = normalizeBaseUrl(config.baseUrl, DEFAULT_BASE_URL, '/chat/completions');
     const endpoint = `${baseUrl}/chat/completions`;
 
     const baseBody: Record<string, unknown> = {
@@ -134,7 +134,7 @@ export const openaiCompatibleAdapter: ProviderAdapter = {
   },
 
   async testConnection(config) {
-    const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const baseUrl = normalizeBaseUrl(config.baseUrl, DEFAULT_BASE_URL, '/chat/completions');
     try {
       const res = await fetch(`${baseUrl}/models`, {
         headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -152,7 +152,7 @@ export const openaiCompatibleAdapter: ProviderAdapter = {
   },
 
   async fetchModels(config) {
-    const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const baseUrl = normalizeBaseUrl(config.baseUrl, DEFAULT_BASE_URL, '/chat/completions');
     let res: Response;
     try {
       res = await fetch(`${baseUrl}/models`, {

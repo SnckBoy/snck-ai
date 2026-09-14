@@ -59,6 +59,23 @@ export function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
 }
 
+/**
+ * Normalize a user-supplied base URL: trim whitespace/trailing slashes and
+ * drop a known endpoint suffix so pasting a full endpoint URL still works
+ * (e.g. "https://api.example.com/v1/chat/completions" -> ".../v1").
+ */
+export function normalizeBaseUrl(
+  baseUrl: string | undefined,
+  fallback: string,
+  endpointSuffix?: string,
+): string {
+  let url = (baseUrl || fallback).trim().replace(/\/+$/, '');
+  if (endpointSuffix && url.endsWith(endpointSuffix)) {
+    url = url.slice(0, -endpointSuffix.length).replace(/\/+$/, '');
+  }
+  return url;
+}
+
 export async function parseErrorResponse(res: Response): Promise<string> {
   try {
     const json = await res.json();

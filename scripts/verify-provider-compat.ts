@@ -60,38 +60,49 @@ async function main() {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('no port');
-  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const base = `http://127.0.0.1:${address.port}`;
 
-  let text = '';
-  let usage: { inputTokens: number; outputTokens: number } | undefined;
-
-  try {
+  const runStream = async (baseUrl: string) => {
+    let text = '';
+    let usage: { inputTokens: number; outputTokens: number } | undefined;
     const generator = openaiCompatibleAdapter.chatStream(
       { baseUrl, apiKey: 'strict-test-key' },
-      {
-        model: 'strict-model',
-        messages: [{ role: 'user', content: 'hi' }],
-        maxTokens: 128,
-      },
+      { model: 'strict-model', messages: [{ role: 'user', content: 'hi' }], maxTokens: 128 },
     );
     for await (const chunk of generator) {
       if (chunk.delta) text += chunk.delta;
       if (chunk.usage) usage = chunk.usage;
     }
+    return { text, usage };
+  };
+
+  try {
+    const expected = 'Hello from strict provider';
+
+    const plain = await runStream(base);
+    if (plain.text !== expected) {
+      console.error(`FAIL: expected "${expected}" but got "${plain.text}"`);
+      process.exit(1);
+    }
+    if (!plain.usage || plain.usage.outputTokens <= 0) {
+      console.error('FAIL: expected usage to be reported');
+      process.exit(1);
+    }
+
+    // A user pasting the full endpoint URL should still work (normalized).
+    const pasted = await runStream(`${base}/chat/completions`);
+    if (pasted.text !== expected) {
+      console.error(`FAIL: pasted endpoint URL not normalized, got "${pasted.text}"`);
+      process.exit(1);
+    }
+
+    console.log(
+      'PASS: strict third-party provider streamed successfully:',
+      JSON.stringify({ text: plain.text, usage: plain.usage }),
+    );
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
-
-  const expected = 'Hello from strict provider';
-  if (text !== expected) {
-    console.error(`FAIL: expected "${expected}" but got "${text}"`);
-    process.exit(1);
-  }
-  if (!usage || usage.outputTokens <= 0) {
-    console.error('FAIL: expected usage to be reported');
-    process.exit(1);
-  }
-  console.log('PASS: strict third-party provider streamed successfully:', JSON.stringify({ text, usage }));
 }
 
 main().catch((err) => {

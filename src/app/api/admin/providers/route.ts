@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { ApiError, requireOwner } from '@/lib/auth';
 import { providerSchema } from '@/lib/validation';
 import { encryptSecret, maskSecret, decryptSecret } from '@/lib/crypto';
-import { getAdapter, getDefaultModels } from '@/lib/providers';
+import { getAdapter, getDefaultModels, ProviderError } from '@/lib/providers';
 
 export const runtime = 'nodejs';
 
@@ -115,8 +115,14 @@ export async function POST(req: NextRequest) {
         discovered = true;
       }
     }
-  } catch {
-    // Keep the defaults; the owner can still fetch/test models from the UI.
+  } catch (err) {
+    // Keep the defaults, but surface why discovery failed (e.g. bad API key).
+    if (err instanceof ProviderError) {
+      await prisma.aIProvider.update({
+        where: { id: provider.id },
+        data: { status: err.status, statusMessage: err.message },
+      });
+    }
   }
 
   await prisma.model.createMany({

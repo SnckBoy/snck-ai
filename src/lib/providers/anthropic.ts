@@ -7,7 +7,7 @@ import type {
   TestResult,
 } from './types';
 import { ProviderError } from './types';
-import { estimateTokens, mapHttpError, parseErrorResponse, sseJsonIterator } from './stream';
+import { estimateTokens, mapHttpError, normalizeBaseUrl, parseErrorResponse, sseJsonIterator } from './stream';
 
 const DEFAULT_BASE_URL = 'https://api.anthropic.com';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -25,7 +25,7 @@ export const anthropicAdapter: ProviderAdapter = {
   ],
 
   async *chatStream(config, params) {
-    const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const baseUrl = normalizeBaseUrl(config.baseUrl, DEFAULT_BASE_URL, '/v1/messages');
     const system = params.messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n');
 
     // Anthropic requires strictly alternating user/assistant turns, so merge
@@ -106,7 +106,7 @@ export const anthropicAdapter: ProviderAdapter = {
   },
 
   async testConnection(config) {
-    const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const baseUrl = normalizeBaseUrl(config.baseUrl, DEFAULT_BASE_URL, '/v1/messages');
     try {
       const res = await fetch(`${baseUrl}/v1/models`, {
         headers: {
@@ -127,7 +127,7 @@ export const anthropicAdapter: ProviderAdapter = {
   },
 
   async fetchModels(config) {
-    const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const baseUrl = normalizeBaseUrl(config.baseUrl, DEFAULT_BASE_URL, '/v1/messages');
     let res: Response;
     try {
       res = await fetch(`${baseUrl}/v1/models`, {

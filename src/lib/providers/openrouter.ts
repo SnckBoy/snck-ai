@@ -6,7 +6,7 @@ import type {
   TestResult,
 } from './types';
 import { ProviderError } from './types';
-import { estimateTokens, mapHttpError, parseErrorResponse, sseJsonIterator } from './stream';
+import { estimateTokens, mapHttpError, normalizeBaseUrl, parseErrorResponse, sseJsonIterator } from './stream';
 
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 
@@ -23,7 +23,7 @@ export const openrouterAdapter: ProviderAdapter = {
   ],
 
   async *chatStream(config, params) {
-    const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const baseUrl = normalizeBaseUrl(config.baseUrl, DEFAULT_BASE_URL, '/chat/completions');
     const body: Record<string, unknown> = {
       model: params.model,
       messages: params.messages.map((m) => ({ role: m.role, content: m.content })),
@@ -94,7 +94,7 @@ export const openrouterAdapter: ProviderAdapter = {
   },
 
   async testConnection(config) {
-    const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const baseUrl = normalizeBaseUrl(config.baseUrl, DEFAULT_BASE_URL, '/chat/completions');
     try {
       const res = await fetch(`${baseUrl}/models`, {
         headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -112,7 +112,7 @@ export const openrouterAdapter: ProviderAdapter = {
   },
 
   async fetchModels(config) {
-    const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const baseUrl = normalizeBaseUrl(config.baseUrl, DEFAULT_BASE_URL, '/chat/completions');
     let res: Response;
     try {
       res = await fetch(`${baseUrl}/models`, {
