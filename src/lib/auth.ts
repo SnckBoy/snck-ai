@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import { cache } from 'react';
 import { prisma } from '@/lib/prisma';
 import type { Role, UserStatus } from '@prisma/client';
 
@@ -48,7 +49,9 @@ export async function destroySession(): Promise<void> {
   });
 }
 
-export async function getSession(): Promise<SessionUser | null> {
+// Deduplicated per request via React cache, so a page render that calls
+// getSession() in both its layout and page only hits the DB once.
+export const getSession = cache(async (): Promise<SessionUser | null> => {
   const token = cookies().get(COOKIE_NAME)?.value;
   if (!token) return null;
   try {
@@ -68,7 +71,7 @@ export async function getSession(): Promise<SessionUser | null> {
   } catch {
     return null;
   }
-}
+});
 
 export class ApiError extends Error {
   status: number;

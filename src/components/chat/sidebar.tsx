@@ -50,29 +50,26 @@ export default function Sidebar({
   const [deleteTarget, setDeleteTarget] = useState<ConversationSummary | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestIdRef = useRef(0);
 
   const loadConversations = async (query = '') => {
+    const requestId = ++requestIdRef.current;
     setSearching(true);
     try {
       const res = await api<{ conversations: ConversationSummary[] }>(
         `/api/conversations?q=${encodeURIComponent(query)}`,
       );
-      setConversations(res.conversations);
+      if (requestId === requestIdRef.current) setConversations(res.conversations);
     } catch {
       /* ignore */
     } finally {
-      setSearching(false);
+      if (requestId === requestIdRef.current) setSearching(false);
     }
   };
 
   useEffect(() => {
-    loadConversations('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => loadConversations(q), 300);
+    timerRef.current = setTimeout(() => loadConversations(q), q ? 300 : 0);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };

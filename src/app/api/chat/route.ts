@@ -39,42 +39,60 @@ export async function POST(req: NextRequest) {
   const { modelId, content, conversationId, title } = parsed.data;
 
   try {
-    const { model, provider } = await resolveModelForUser(modelId, user);
-    await checkUsageAllowed(user.id);
+    // These three lookups are independent — run them concurrently to cut
+    // latency before the first token.
+    const [{ model, provider }, , existing] = await Promise.all([
+      resolveModelForUser(modelId, user),
+      checkUsageAllowed(user.id),
+      conversationId
+        ? prisma.conversation.findFirst({
+            where: { id: conversationId, userId: user.id },
+          })
+        : Promise.resolve(null),
+    ]);
 
-    let conversation;
-    if (conversationId) {
-      conversation = await prisma.conversation.findFirst({
-        where: { id: conversationId, userId: user.id },
+    if (conversationId && !existing) {
+      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+    }
+
+    let activeConversationId: string;
+    if (existing) {
+      activeConversationId = existing.id;
+
+      // Persist the user message before streaming.
+      await prisma.message.create({
+        data: { conversationId: existing.id, role: 'user', content, modelId },
       });
-      if (!conversation) {
-        return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
+
+      const needsTitle = existing.title === 'New Chat';
+      if (existing.modelId !== modelId || needsTitle) {
+        await prisma.conversation.update({
+          where: { id: existing.id },
+          data: {
+            modelId,
+            ...(needsTitle ? { title: content.trim().slice(0, 60) || 'New Chat' } : {}),
+          },
+        });
       }
     } else {
       const autoTitle = (title?.trim() || content.trim().slice(0, 60)) || 'New Chat';
-      conversation = await prisma.conversation.create({
-        data: { userId: user.id, title: autoTitle, modelId },
+      const created = await prisma.conversation.create({
+        data: {
+          userId: user.id,
+          title: autoTitle,
+          modelId,
+          messages: { create: { role: 'user', content, modelId } },
+        },
       });
+      activeConversationId = created.id;
     }
-
-    // Persist the user message before streaming.
-    await prisma.message.create({
-      data: { conversationId: conversation.id, role: 'user', content, modelId },
-    });
-
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        modelId,
-        ...(conversation.title === 'New Chat' ? { title: content.trim().slice(0, 60) || 'New Chat' } : {}),
-      },
-    });
 
     const { stream } = buildChatStream({
       user,
       model,
       provider,
-      conversationId: conversation.id,
+      conversationId: activeConversationId,
+      signal: req.signal,
     });
 
     return new Response(stream, {

@@ -3,6 +3,22 @@
 import { create } from 'zustand';
 import type { ConversationSummary, ModelOption } from '@/types';
 
+function sameModels(a: ModelOption[], b: ModelOption[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].id !== b[i].id ||
+      a[i].identifier !== b[i].identifier ||
+      a[i].displayName !== b[i].displayName ||
+      a[i].providerName !== b[i].providerName
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 interface ChatState {
   conversations: ConversationSummary[];
   conversationsLoaded: boolean;
@@ -38,11 +54,13 @@ export const useChatStore = create<ChatState>((set) => ({
       conversations: state.conversations.filter((x) => x.id !== id),
     })),
 
-  setSelectedModelId: (id) => {
-    if (id) localStorage.setItem('snck-model', id);
-    set({ selectedModelId: id });
-  },
+  setSelectedModelId: (id) =>
+    set((state) => {
+      if (state.selectedModelId === id) return state;
+      if (id && typeof window !== 'undefined') localStorage.setItem('snck-model', id);
+      return { selectedModelId: id };
+    }),
 
   setAvailableModels: (models) =>
-    set({ availableModels: models }),
+    set((state) => (sameModels(state.availableModels, models) ? state : { availableModels: models })),
 }));

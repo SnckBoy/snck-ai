@@ -65,22 +65,28 @@ export async function GET(req: NextRequest) {
   });
   const userMap = new Map(topUserDetails.map((u) => [u.id, u]));
 
-  // Daily series
-  const dailyRecords = await prisma.usageRecord.findMany({
-    where: { createdAt: { gte: since } },
-    select: { createdAt: true, totalTokens: true },
-  });
+  // Daily series — aggregate in SQL so we never load every usage row into memory.
+  const dailyRows = await prisma.$queryRaw<Array<{ day: string; tokens: bigint; requests: bigint }>>`
+    SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
+           COALESCE(SUM("totalTokens"), 0)::bigint AS tokens,
+           COUNT(*)::bigint AS requests
+    FROM "UsageRecord"
+    WHERE "createdAt" >= ${since}
+    GROUP BY day
+    ORDER BY day ASC
+  `;
   const dailyMap = new Map<string, { tokens: number; requests: number }>();
-  for (let i = 0; i < days; i++) {
-    const d = new Date(since.getTime() + i * DAY_MS);
+  const todayUtc = new Date();
+  todayUtc.setUTCHours(0, 0, 0, 0);
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(todayUtc.getTime() - i * DAY_MS);
     dailyMap.set(d.toISOString().slice(0, 10), { tokens: 0, requests: 0 });
   }
-  for (const r of dailyRecords) {
-    const key = r.createdAt.toISOString().slice(0, 10);
-    const entry = dailyMap.get(key);
+  for (const r of dailyRows) {
+    const entry = dailyMap.get(r.day);
     if (entry) {
-      entry.tokens += num(r.totalTokens);
-      entry.requests += 1;
+      entry.tokens += Number(r.tokens);
+      entry.requests += Number(r.requests);
     }
   }
   const dailySeries = [...dailyMap.entries()].map(([date, v]) => ({ date, ...v }));

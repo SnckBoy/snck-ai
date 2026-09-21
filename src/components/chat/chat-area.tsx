@@ -29,6 +29,31 @@ function parseSSE(line: string): { type: string; [k: string]: unknown } | null {
   }
 }
 
+// Reads an SSE response and invokes `onEvent` for each parsed event. Normalizes
+// CRLF so events survive proxies that rewrite line endings.
+async function consumeSSE(
+  res: Response,
+  onEvent: (evt: { type: string; [k: string]: unknown }) => void,
+): Promise<void> {
+  if (!res.body) throw new Error('No response stream');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
+    let idx = buffer.indexOf('\n\n');
+    while (idx !== -1) {
+      const line = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      const evt = parseSSE(line);
+      if (evt) onEvent(evt);
+      idx = buffer.indexOf('\n\n');
+    }
+  }
+}
+
 export default function ChatArea({ conversationId, initialMessages = [], initialTitle }: ChatAreaProps) {
   const router = useRouter();
   const selectedModelId = useChatStore((s) => s.selectedModelId);
@@ -46,22 +71,37 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const atBottomRef = useRef(true);
+  const scrollPendingRef = useRef(false);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const [showJump, setShowJump] = useState(false);
 
   useEffect(() => {
     setConvoId(conversationId ?? null);
     setTitle(initialTitle ?? '');
     setMessages(initialMessages);
-  }, [conversationId, initialTitle, initialMessages]);
+    // Only reset when switching conversations; `initialMessages` gets a new
+    // array identity on every server render and must not clobber live state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, initialTitle]);
+
+  // Abort any in-flight generation when navigating away.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const scrollToBottom = useCallback((smooth = true) => {
     bottomRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
   }, []);
 
   useEffect(() => {
-    if (isStreaming || messages.length > 0) {
-      if (atBottomRef.current) scrollToBottom(true);
-    }
+    if (!(isStreaming || messages.length > 0)) return;
+    if (!atBottomRef.current) return;
+    // Coalesce per-token updates into a single scroll per animation frame.
+    if (scrollPendingRef.current) return;
+    scrollPendingRef.current = true;
+    requestAnimationFrame(() => {
+      scrollPendingRef.current = false;
+      if (atBottomRef.current) scrollToBottom(!isStreaming);
+    });
   }, [messages, isStreaming, scrollToBottom]);
 
   const handleScroll = () => {
@@ -96,11 +136,44 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
         content: '',
         createdAt: new Date().toISOString(),
       };
-      const newMessages = [...messages, userMsg, assistantMsg];
-      setMessages(newMessages);
-
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
       const controller = new AbortController();
       abortRef.current = controller;
+
+      // Coalesce streamed deltas into one state update per animation frame.
+      let pendingDelta = '';
+      let rafId: number | null = null;
+      const applyDelta = (chunk: string) => {
+        setMessages((prev) => {
+          const copy = [...prev];
+          const mIdx = copy.findIndex((m) => m.id === assistantMsg.id);
+          if (mIdx >= 0) copy[mIdx] = { ...copy[mIdx], content: copy[mIdx].content + chunk };
+          return copy;
+        });
+      };
+      const flushDelta = () => {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        if (!pendingDelta) return;
+        const chunk = pendingDelta;
+        pendingDelta = '';
+        applyDelta(chunk);
+      };
+      const queueDelta = (chunk: string) => {
+        pendingDelta += chunk;
+        if (rafId === null) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            if (pendingDelta) {
+              const t = pendingDelta;
+              pendingDelta = '';
+              applyDelta(t);
+            }
+          });
+        }
+      };
 
       try {
         const res = await fetch('/api/chat', {
@@ -127,34 +200,11 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
           return;
         }
 
-        if (!res.body) throw new Error('No response stream');
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-
-          let idx = buffer.indexOf('\n\n');
-          while (idx !== -1) {
-            const line = buffer.slice(0, idx);
-            buffer = buffer.slice(idx + 2);
-            const evt = parseSSE(line);
-            if (evt) {
+        await consumeSSE(res, (evt) => {
               if (evt.type === 'delta') {
-                const delta = String(evt.content ?? '');
-                setMessages((prev) => {
-                  const copy = [...prev];
-                  const mIdx = copy.findIndex((m) => m.id === assistantMsg.id);
-                  if (mIdx >= 0) {
-                    copy[mIdx] = { ...copy[mIdx], content: copy[mIdx].content + delta };
-                  }
-                  return copy;
-                });
+                queueDelta(String(evt.content ?? ''));
               } else if (evt.type === 'usage') {
+                flushDelta();
                 const u = evt.usage as { input: number; output: number };
                 setMessages((prev) => {
                   const copy = [...prev];
@@ -169,6 +219,7 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
                   return copy;
                 });
               } else if (evt.type === 'done') {
+                flushDelta();
                 const cid = String(evt.conversationId ?? '');
                 setMessages((prev) => {
                   const copy = [...prev];
@@ -176,7 +227,6 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
                   if (mIdx >= 0) {
                     copy[mIdx] = {
                       ...copy[mIdx],
-                      id: String(evt.messageId ?? copy[mIdx].id),
                       inputTokens: (evt.usage as { input: number })?.input ?? 0,
                       outputTokens: (evt.usage as { output: number })?.output ?? 0,
                     };
@@ -197,6 +247,7 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
                   router.replace(`/chat/${cid}`, { scroll: false });
                 }
               } else if (evt.type === 'error') {
+                flushDelta();
                 const msg = String(evt.message ?? 'An error occurred');
                 setMessages((prev) => {
                   const copy = [...prev];
@@ -205,11 +256,9 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
                   return copy;
                 });
               }
-            }
-            idx = buffer.indexOf('\n\n');
-          }
-        }
+        });
       } catch (err) {
+        flushDelta();
         if (controller.signal.aborted) {
           // User pressed stop — keep the partial content.
           setMessages((prev) => {
@@ -229,13 +278,14 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
           });
         }
       } finally {
+        flushDelta();
         setIsStreaming(false);
         abortRef.current = null;
         setInput('');
         textareaRef.current?.focus();
       }
     },
-    [isStreaming, selectedModelId, convoId, messages, addOrUpdateConversation, router],
+    [isStreaming, selectedModelId, convoId, addOrUpdateConversation, router],
   );
 
   const stop = () => {
@@ -250,9 +300,10 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
     }
 
     // Drop the last assistant message locally.
-    const lastUserIndex = messages.map((m) => m.role).lastIndexOf('user');
+    const current = messagesRef.current;
+    const lastUserIndex = current.map((m) => m.role).lastIndexOf('user');
     if (lastUserIndex < 0) return;
-    const newMessages = messages.slice(0, lastUserIndex + 1);
+    const newMessages = current.slice(0, lastUserIndex + 1);
     setMessages(newMessages);
     setStreamError('');
     setIsStreaming(true);
@@ -267,6 +318,41 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
 
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // Coalesce streamed deltas into one state update per animation frame.
+    let pendingDelta = '';
+    let rafId: number | null = null;
+    const applyDelta = (chunk: string) => {
+      setMessages((prev) => {
+        const copy = [...prev];
+        const mIdx = copy.findIndex((m) => m.id === assistantMsg.id);
+        if (mIdx >= 0) copy[mIdx] = { ...copy[mIdx], content: copy[mIdx].content + chunk };
+        return copy;
+      });
+    };
+    const flushDelta = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      if (!pendingDelta) return;
+      const chunk = pendingDelta;
+      pendingDelta = '';
+      applyDelta(chunk);
+    };
+    const queueDelta = (chunk: string) => {
+      pendingDelta += chunk;
+      if (rafId === null) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          if (pendingDelta) {
+            const t = pendingDelta;
+            pendingDelta = '';
+            applyDelta(t);
+          }
+        });
+      }
+    };
 
     try {
       const res = await fetch('/api/chat/regenerate', {
@@ -293,29 +379,11 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
         return;
       }
 
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let idx = buffer.indexOf('\n\n');
-        while (idx !== -1) {
-          const line = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 2);
-          const evt = parseSSE(line);
-          if (evt) {
+      await consumeSSE(res, (evt) => {
             if (evt.type === 'delta') {
-              const delta = String(evt.content ?? '');
-              setMessages((prev) => {
-                const copy = [...prev];
-                const mIdx = copy.findIndex((m) => m.id === assistantMsg.id);
-                if (mIdx >= 0) copy[mIdx] = { ...copy[mIdx], content: copy[mIdx].content + delta };
-                return copy;
-              });
+              queueDelta(String(evt.content ?? ''));
             } else if (evt.type === 'usage') {
+              flushDelta();
               const u = evt.usage as { input: number; output: number };
               setMessages((prev) => {
                 const copy = [...prev];
@@ -324,12 +392,7 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
                 return copy;
               });
             } else if (evt.type === 'done') {
-              setMessages((prev) => {
-                const copy = [...prev];
-                const mIdx = copy.findIndex((m) => m.id === assistantMsg.id);
-                if (mIdx >= 0) copy[mIdx] = { ...copy[mIdx], id: String(evt.messageId ?? copy[mIdx].id) };
-                return copy;
-              });
+              flushDelta();
               addOrUpdateConversation({
                 id: convoId,
                 title: title || 'New Chat',
@@ -339,6 +402,7 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
                 messageCount: newMessages.length + 1,
               });
             } else if (evt.type === 'error') {
+              flushDelta();
               const msg = String(evt.message ?? 'An error occurred');
               setMessages((prev) => {
                 const copy = [...prev];
@@ -347,11 +411,9 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
                 return copy;
               });
             }
-          }
-          idx = buffer.indexOf('\n\n');
-        }
-      }
+      });
     } catch (err) {
+      flushDelta();
       setMessages((prev) => {
         const copy = [...prev];
         const mIdx = copy.findIndex((m) => m.id === assistantMsg.id);
@@ -359,11 +421,12 @@ export default function ChatArea({ conversationId, initialMessages = [], initial
         return copy;
       });
     } finally {
+      flushDelta();
       setIsStreaming(false);
       abortRef.current = null;
       textareaRef.current?.focus();
     }
-  }, [convoId, isStreaming, selectedModelId, messages, title, addOrUpdateConversation]);
+  }, [convoId, isStreaming, selectedModelId, title, addOrUpdateConversation]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !isStreaming) {

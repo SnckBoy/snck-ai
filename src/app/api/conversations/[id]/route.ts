@@ -12,7 +12,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const conversation = await prisma.conversation.findFirst({
       where: { id: params.id, userId: user.id },
       include: {
-        messages: { orderBy: { createdAt: 'asc' } },
+        // Cap the transcript returned for display; -take returns the most recent.
+        messages: { orderBy: { createdAt: 'asc' }, take: -500 },
       },
     });
     if (!conversation) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -52,18 +52,22 @@ function CodeBlockPre(props: any) {
   );
 }
 
-export default function Markdown({ content }: { content: string }) {
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [rehypeHighlight];
+const MARKDOWN_COMPONENTS = { pre: CodeBlockPre };
+
+function Markdown({ content }: { content: string }) {
   return (
     <div className="prose-snck">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
-        components={{
-          pre: CodeBlockPre,
-        }}
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={REHYPE_PLUGINS}
+        components={MARKDOWN_COMPONENTS}
       >
         {content}
       </ReactMarkdown>
     </div>
   );
 }
+
+export default memo(Markdown);

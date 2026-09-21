@@ -14,21 +14,32 @@ export default function ModelSelector({ compact = false }: { compact?: boolean }
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(availableModels.length === 0);
   const ref = useRef<HTMLDivElement>(null);
+  const lastLoadedRef = useRef(0);
 
-  const loadModels = useCallback(() => {
-    api<{ models: ModelOption[] }>('/api/models')
-      .then((res) => {
-        setAvailableModels(res.models);
-        const stored = localStorage.getItem('snck-model');
-        const valid = res.models.find((m) => m.id === stored);
-        setSelectedModelId(valid?.id ?? res.models[0]?.id ?? null);
-      })
-      .catch(() => setSelectedModelId(null))
-      .finally(() => setLoading(false));
-  }, [setAvailableModels, setSelectedModelId]);
+  const loadModels = useCallback(
+    (force = false) => {
+      const now = Date.now();
+      // Throttle focus-driven refreshes so switching tabs doesn't hammer the API.
+      if (!force && now - lastLoadedRef.current < 30_000) return;
+      lastLoadedRef.current = now;
+
+      api<{ models: ModelOption[] }>('/api/models')
+        .then((res) => {
+          setAvailableModels(res.models);
+          const stored = localStorage.getItem('snck-model');
+          const valid = res.models.find((m) => m.id === stored);
+          setSelectedModelId(valid?.id ?? res.models[0]?.id ?? null);
+        })
+        .catch(() => {
+          // Keep the current selection on a transient failure.
+        })
+        .finally(() => setLoading(false));
+    },
+    [setAvailableModels, setSelectedModelId],
+  );
 
   useEffect(() => {
-    loadModels();
+    loadModels(true);
     const onFocus = () => {
       if (document.visibilityState === 'visible') loadModels();
     };

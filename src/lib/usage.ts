@@ -86,8 +86,8 @@ export async function applyDefaultLimitsToUser(userId: string): Promise<void> {
 /**
  * Roll daily/monthly usage counters over when their window expires.
  */
-export async function rolloverWindows(userId: string): Promise<User | null> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+export async function rolloverWindows(userId: string, existing?: User | null): Promise<User | null> {
+  const user = existing ?? (await prisma.user.findUnique({ where: { id: userId } }));
   if (!user) return null;
   const now = new Date();
   const updates: Prisma.UserUpdateInput = {};
@@ -119,7 +119,7 @@ export async function checkUsageAllowed(userId: string): Promise<User> {
   }
   if (user.unlimited) return user;
 
-  const fresh = (await rolloverWindows(userId)) ?? user;
+  const fresh = (await rolloverWindows(userId, user)) ?? user;
 
   const usedDaily = num(fresh.dailyTokensUsed);
   const usedMonthly = num(fresh.monthlyTokensUsed);

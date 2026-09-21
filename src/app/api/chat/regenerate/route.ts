@@ -41,15 +41,16 @@ export async function POST(req: NextRequest) {
   const { conversationId, modelId } = parsed.data;
 
   try {
-    const conversation = await prisma.conversation.findFirst({
-      where: { id: conversationId, userId: user.id },
-    });
+    const [{ model, provider }, , conversation] = await Promise.all([
+      resolveModelForUser(modelId, user),
+      checkUsageAllowed(user.id),
+      prisma.conversation.findFirst({
+        where: { id: conversationId, userId: user.id },
+      }),
+    ]);
     if (!conversation) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
-
-    const { model, provider } = await resolveModelForUser(modelId, user);
-    await checkUsageAllowed(user.id);
 
     // Remove the last assistant message so the model can generate a fresh answer.
     const lastMessage = await prisma.message.findFirst({
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
       model,
       provider,
       conversationId,
+      signal: req.signal,
     });
 
     return new Response(stream, {

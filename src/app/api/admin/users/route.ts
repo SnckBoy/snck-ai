@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     ...(status && (status === 'ACTIVE' || status === 'DISABLED') ? { status: status as 'ACTIVE' | 'DISABLED' } : {}),
   };
 
-  const [users, total, aggregates] = await Promise.all([
+  const [users, total] = await Promise.all([
     prisma.user.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -56,12 +56,18 @@ export async function GET(req: NextRequest) {
       },
     }),
     prisma.user.count({ where }),
-    prisma.usageRecord.groupBy({
-      by: ['userId'],
-      _sum: { totalTokens: true },
-      _count: { _all: true },
-    }),
   ]);
+
+  // Only aggregate usage for the users actually on this page.
+  const userPageIds = users.map((u) => u.id);
+  const aggregates = userPageIds.length
+    ? await prisma.usageRecord.groupBy({
+        by: ['userId'],
+        where: { userId: { in: userPageIds } },
+        _sum: { totalTokens: true },
+        _count: { _all: true },
+      })
+    : [];
 
   const aggMap = new Map(
     aggregates.map((a) => [

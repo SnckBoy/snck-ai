@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Bot, Check, Copy, RefreshCw, User, AlertTriangle } from 'lucide-react';
 import Markdown from './markdown';
 import type { ChatMessage } from '@/types';
 import { cn } from '@/components/ui';
 
-export default function MessageBubble({
+function MessageBubble({
   message,
   isStreaming,
   onRegenerate,
@@ -118,3 +118,5 @@ export default function MessageBubble({
     </motion.div>
   );
 }
+
+export default memo(MessageBubble);

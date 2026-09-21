@@ -4,6 +4,7 @@ const nextConfig = {
   output: 'standalone',
   experimental: {
     serverComponentsExternalPackages: ['@prisma/client'],
+    optimizePackageImports: ['lucide-react', 'framer-motion', 'recharts'],
   },
 };
 

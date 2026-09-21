@@ -19,6 +19,8 @@ export const viewport: Viewport = {
   ],
 };
 
+const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('snck-theme');var d=t==='light'?'light':'dark';var r=document.documentElement;if(d==='light'){r.classList.add('light');r.classList.remove('dark');}else{r.classList.remove('light');r.classList.add('dark');}r.style.colorScheme=d;}catch(e){}})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -28,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           ['--font-jetbrains' as string]: "'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace",
         }}
       >
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

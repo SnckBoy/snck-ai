@@ -13,6 +13,7 @@ interface ChatStreamInput {
   model: Model;
   provider: AIProvider;
   conversationId: string;
+  signal?: AbortSignal;
 }
 
 export interface ChatStreamOutput {
@@ -20,11 +21,14 @@ export interface ChatStreamOutput {
   conversationId: string;
 }
 
+const MAX_HISTORY_CHARS = 20_000;
+
 export function buildChatStream({
   user,
   model,
   provider,
   conversationId,
+  signal,
 }: ChatStreamInput): ChatStreamOutput {
   if (!provider.apiKeyEnc) {
     throw new Error('Provider has no API key configured');
@@ -34,6 +38,12 @@ export function buildChatStream({
   const adapter = getAdapter(provider.type);
 
   const encoder = new TextEncoder();
+  const abortController = new AbortController();
+  const onAbort = () => abortController.abort();
+  if (signal) {
+    if (signal.aborted) abortController.abort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -44,6 +54,13 @@ export function buildChatStream({
           /* controller closed */
         }
       };
+      const safeClose = () => {
+        try {
+          controller.close();
+        } catch {
+          /* already closed/cancelled */
+        }
+      };
 
       let fullText = '';
       let inputTokens = 0;
@@ -51,12 +68,21 @@ export function buildChatStream({
 
       try {
         const history = await prisma.message.findMany({
-          where: { conversationId },
+          where: { conversationId, role: { in: ['user', 'assistant'] } },
           orderBy: { createdAt: 'asc' },
         });
-        const providerMessages = history
-          .filter((m) => m.role === 'user' || m.role === 'assistant')
-          .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+
+        // Keep only the most recent context. Unbounded history inflates input
+        // cost and can exceed the provider's context window on long chats.
+        const providerMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+        let historyChars = 0;
+        for (let i = history.length - 1; i >= 0; i--) {
+          const m = history[i];
+          const len = m.content.length;
+          if (providerMessages.length > 0 && historyChars + len > MAX_HISTORY_CHARS) break;
+          providerMessages.unshift({ role: m.role as 'user' | 'assistant', content: m.content });
+          historyChars += len;
+        }
 
         const generator = adapter.chatStream(
           { baseUrl: provider.baseUrl ?? undefined, apiKey },
@@ -64,10 +90,12 @@ export function buildChatStream({
             model: model.identifier,
             messages: providerMessages,
             maxTokens: 4096,
+            signal: abortController.signal,
           },
         );
 
         for await (const chunk of generator) {
+          if (abortController.signal.aborted) break;
           if (chunk.delta) {
             fullText += chunk.delta;
             safeSend({ type: 'delta', content: chunk.delta });
@@ -76,6 +104,10 @@ export function buildChatStream({
             inputTokens = toTokenInt(chunk.usage.inputTokens);
             outputTokens = toTokenInt(chunk.usage.outputTokens);
           }
+        }
+
+        if (abortController.signal.aborted) {
+          throw new Error('Generation stopped');
         }
 
         inputTokens = toTokenInt(inputTokens);
@@ -107,42 +139,59 @@ export function buildChatStream({
           usage: { input: inputTokens, output: outputTokens },
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unexpected streaming error';
+        const aborted = abortController.signal.aborted;
+        const message = aborted
+          ? 'Generation stopped'
+          : err instanceof Error
+            ? err.message
+            : 'Unexpected streaming error';
         inputTokens = toTokenInt(inputTokens);
         outputTokens = toTokenInt(outputTokens);
 
+        // Always persist whatever was generated so the user keeps partial output,
+        // but never bill tokens for a response the user cancelled.
         if (fullText.trim().length > 0) {
-          await prisma.message.create({
-            data: {
-              conversationId,
-              role: 'assistant',
-              content: fullText,
+          await prisma.message
+            .create({
+              data: {
+                conversationId,
+                role: 'assistant',
+                content: fullText,
+                modelId: model.id,
+                inputTokens: BigInt(inputTokens),
+                outputTokens: BigInt(outputTokens),
+              },
+            })
+            .catch(() => undefined);
+          if (!aborted) {
+            await recordUsage({
+              userId: user.id,
+              providerId: provider.id,
               modelId: model.id,
-              inputTokens: BigInt(inputTokens),
-              outputTokens: BigInt(outputTokens),
-            },
-          });
-          await recordUsage({
-            userId: user.id,
-            providerId: provider.id,
-            modelId: model.id,
-            inputTokens,
-            outputTokens,
-          }).catch(() => undefined);
-        } else {
-          await prisma.message.create({
-            data: {
-              conversationId,
-              role: 'assistant',
-              content: 'An error occurred while generating a response.',
-              modelId: model.id,
-            },
-          });
+              inputTokens,
+              outputTokens,
+            }).catch(() => undefined);
+          }
+        } else if (!aborted) {
+          await prisma.message
+            .create({
+              data: {
+                conversationId,
+                role: 'assistant',
+                content: 'An error occurred while generating a response.',
+                modelId: model.id,
+              },
+            })
+            .catch(() => undefined);
         }
-        safeSend({ type: 'error', message });
+        if (!aborted) safeSend({ type: 'error', message });
       } finally {
-        controller.close();
+        if (signal) signal.removeEventListener('abort', onAbort);
+        safeClose();
       }
+    },
+    cancel() {
+      abortController.abort();
     },
   });
 
